@@ -27,7 +27,8 @@ jobs:
       - id: deploy
         uses: cloudflare/wrangler-action@v4
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # The repo secret is named CLOUDFLARE_API_TOKE (GitHub can't rename secrets).
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKE }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: service
           packageManager: npm

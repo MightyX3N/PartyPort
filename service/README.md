@@ -17,7 +17,7 @@ PARTYPORT_URL=https://<deployed-url> npm test   # same test against a deployment
 
 Deploys happen from GitHub Actions (`.github/workflows/service.yml`) when
 anything in `service/` changes on `main`. Needs the repo secrets
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+`CLOUDFLARE_API_TOKE` (sic) and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Identity
 
