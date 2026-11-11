@@ -10,6 +10,8 @@ const PASS_TTL_MS = 10 * 60 * 1000; // membership passes last 10 minutes
 const DEFAULT_MAX_MEMBERS = 50;
 const HARD_MAX_MEMBERS = 200;
 const CHAT_RATE = { count: 10, windowMs: 10_000 };
+const SWEEP_EVERY_MS = 2 * 60 * 1000; // check for dead connections
+const SILENT_LIMIT_MS = 150 * 1000; // no ping or message for this long = gone
 const ADDRESS_RE = /^[A-Za-z0-9.-]{1,100}:\d{1,5}$/;
 const GAME_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 
@@ -27,6 +29,9 @@ export class Party extends DurableObject {
     this.sql = ctx.storage.sql;
     this.rate = new Map();
     this.migrate();
+    // Clients send "ping" every 25 s; Cloudflare answers "pong" without
+    // waking this object, and records when it last did so.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
   migrate() {
@@ -153,7 +158,7 @@ export class Party extends DurableObject {
   authedSockets() {
     return this.ctx.getWebSockets().filter((ws) => {
       const a = ws.deserializeAttachment();
-      return a && a.authed;
+      return a && a.authed && !a.gone;
     });
   }
   socketsFor(key) {
@@ -286,6 +291,7 @@ export class Party extends DurableObject {
     if (!att) return;
 
     if (!att.authed) return this.handleAuth(ws, att, msg);
+    if (Date.now() - (att.at || 0) > 30_000) ws.serializeAttachment({ ...att, at: Date.now() });
 
     const me = this.member(att.key);
     if (!me) {
@@ -332,6 +338,32 @@ export class Party extends DurableObject {
 
     this.send(ws, this.snapshot(att.key));
     if (!wasOnline) this.broadcast({ t: "presence", key: att.key, online: true }, (a) => a.key !== att.key);
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now() + this.sweepEvery());
+  }
+
+  /** Close connections that have gone silent (crashed app, lost network). */
+  async alarm() {
+    const now = Date.now();
+    for (const ws of this.authedSockets()) {
+      const att = ws.deserializeAttachment();
+      const pinged = this.ctx.getWebSocketAutoResponseTimestamp(ws);
+      const last = Math.max(att.at || 0, pinged ? pinged.getTime() : 0);
+      if (now - last > (Number(this.env.TEST_SILENT_MS) || SILENT_LIMIT_MS)) {
+        ws.serializeAttachment({ ...att, gone: true });
+        this.onSocketGone(ws, att);
+        try {
+          ws.close(4002, "timed out");
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    if (this.authedSockets().length > 0) await this.ctx.storage.setAlarm(now + this.sweepEvery());
+  }
+
+  // Timings can be shortened through env vars for tests only.
+  sweepEvery() {
+    return Number(this.env.TEST_SWEEP_MS) || SWEEP_EVERY_MS;
   }
 
   snapshot(key) {
@@ -393,10 +425,11 @@ export class Party extends DurableObject {
     this.onSocketGone(ws);
   }
 
-  onSocketGone(ws) {
-    const att = ws.deserializeAttachment();
+  onSocketGone(ws, known) {
+    const att = known || ws.deserializeAttachment();
     this.rate.delete(ws);
     if (!att || !att.authed) return;
+    if (!known && att.gone) return; // already handled by the sweep
     if (!this.exists()) return;
     // The closing socket can still be listed while closing; exclude it.
     const others = this.socketsFor(att.key).filter((s) => s !== ws);

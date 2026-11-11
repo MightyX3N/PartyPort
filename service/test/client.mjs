@@ -68,6 +68,7 @@ export class Conn {
         this.push({ t: "_closed", code: e.code, reason: e.reason });
       };
       this.ws.onmessage = (e) => {
+        if (e.data === "pong") return;
         const msg = JSON.parse(e.data);
         if (msg.t === "challenge") {
           this.ws.send(JSON.stringify({ t: "auth", sig: member.sign(`pp-ws\n${msg.party}\n${msg.nonce}`), name: member.name }));
