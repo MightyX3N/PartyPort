@@ -1,0 +1,377 @@
+# PartyPort architecture plan
+
+PartyPort is a Hamachi-style app built on top of [playit.gg](https://playit.gg).
+Friends join a **party**, see who is online and what they are hosting, and a
+friend's game server shows up in their own game's **LAN list** as if everyone
+were on the same Wi-Fi. No port forwarding, no IP addresses to share.
+
+This document is the plan for how it is built. It describes the intended
+design; anything marked **(verify)** must be confirmed against the real tool or
+API before it is implemented.
+
+---
+
+## 1. Goals
+
+- Join a party with an invite code and see members, status and what they host.
+- Host a game with one click; playit.gg carries the traffic, so no port forwarding.
+- Friends' servers appear in the game's own LAN list where the game supports it.
+- Only party members can connect to a hosted server, unless the host ticks
+  **"Allow joining without PartyPort"**.
+- Parties survive their creator going offline; invites work even when every
+  member is offline.
+- Small built-in party chat with event messages ("Jonas started hosting…").
+- One app for **Windows, Linux and Android** (phone and tablet), plus a
+  click-around **browser preview**.
+- Themes: **PartyPort** (default), **Classic** (Hamachi-style), **Playit-style**.
+
+Non-goals for the first version: macOS and iOS builds, voice chat, direct
+peer-to-peer game traffic (playit.gg carries all game traffic).
+
+---
+
+## 2. The big picture
+
+```
+ ┌────────────────────────┐          WebSocket (TLS)         ┌──────────────────────────────┐
+ │ PartyPort app (LÖVE)   │ ───────────────────────────────▶ │ Party service                │
+ │  • UI + themes         │ ◀─────────────────────────────── │ Cloudflare Worker            │
+ │  • local party cache   │   party events, chat, passes     │  + one Durable Object/party  │
+ │  • LAN bridge          │                                  │  (SQLite storage)            │
+ │  • gate (when hosting) │                                  └──────────────────────────────┘
+ │  • playit agent (host) │
+ └──────────┬─────────────┘
+            │ game traffic (ENet over one UDP tunnel)
+            ▼
+ ┌────────────────────────┐        ┌───────────────────────────┐
+ │ playit.gg network      │ ─────▶ │ Host's PartyPort gate      │ ─▶ game server on 127.0.0.1
+ └────────────────────────┘        └───────────────────────────┘
+```
+
+Three separate jobs:
+
+| Job | Who does it |
+|---|---|
+| Parties, members, invites, chat, "who is hosting" | **Party service** on Cloudflare |
+| Carrying game traffic over the internet | **playit.gg** tunnels |
+| Making the game think the server is on the LAN | **PartyPort app** (LAN bridge + gate) |
+
+---
+
+## 3. Identity
+
+- On first run the app creates an **Ed25519 key pair** for the device. The
+  public key is the member's identity; the private key never leaves the device.
+- The user picks a display name. Names are not unique; keys are.
+- Signing in on a second device: the old device shows a short link code, the new
+  device enters it, and the old device signs a "this key is also me" statement
+  that the party service stores. Lost device with no other device: rejoin parties
+  via a new invite.
+- Crypto library: **Monocypher** (small single-file C library, easy to compile
+  for Windows, Linux and Android), called through LuaJIT's FFI or the existing
+  [luamonocypher](https://github.com/philanc/luamonocypher) binding. libsodium
+  ([luasodium](https://github.com/jprjr/luasodium)) is the fallback option.
+  We do not write our own crypto.
+
+---
+
+## 4. Party service (Cloudflare)
+
+### 4.1 Pieces
+
+- **One Cloudflare Worker** (`service/`) — HTTP + WebSocket entry point.
+- **One Durable Object per party**, using the **SQLite storage backend** (the
+  backend that is available on the Workers Free plan).
+- The WebSocket **Hibernation API** so idle parties cost nothing.
+- Worker secret: an Ed25519 **service signing key** used to sign membership
+  passes. Its public key is built into the app.
+
+Free plan limits that matter (per day): 100,000 requests, 5 GB SQLite storage;
+incoming WebSocket messages count 20:1 and outgoing messages are free. A
+friends-and-parties app sits far below this.
+
+### 4.2 Data stored per party
+
+| Table | Contents |
+|---|---|
+| `party` | id, name, created_at, settings (max members, password hash, chat retention) |
+| `members` | public key, display name, role (`owner` / `admin` / `member`), joined_at, last_seen |
+| `devices` | extra keys linked to a member |
+| `invites` | code, created_by, expires_at, max_uses, uses, revoked |
+| `hosts` | member, game preset, gate tunnel address, direct address (if open), started_at |
+| `chat` | id, sender, time, text or event type — **last 500 messages kept** |
+| `bans` | public key, banned_by, time |
+
+### 4.3 Authentication
+
+1. App opens a WebSocket to `/party/<id>`.
+2. Durable Object sends a random challenge.
+3. App signs it with its device key; DO checks the key is a member (or a linked device).
+4. Connection is now that member. No passwords, no accounts.
+
+### 4.4 Invites
+
+- Admins/owner create invites with an expiry and optional use limit.
+- Invite code format: short human code (e.g. `FRDY-7K2Q`) plus an invite link
+  `https://<site>/join/FRDY-7K2Q` that opens the app.
+- Joining is checked **by the Durable Object**, so it works even when every
+  member is offline.
+- Optional party password on top of the invite.
+- Invites can be revoked at any time.
+
+### 4.5 Roles and the "creator is offline" case
+
+- The party lives in the Durable Object, not on anyone's PC. The creator going
+  offline changes nothing.
+- **Owner** (one), **admins** (any number), **members**.
+- Admins can invite, kick, ban, rename, change settings. Owner can also promote
+  and demote admins and hand over ownership.
+- If the owner and all admins have been inactive for **30 days**, the
+  longest-standing active member is offered ownership.
+
+### 4.6 Membership passes (used by the host's gate)
+
+- When a member wants to join a hosted game, the DO issues a **pass**: a small
+  signed token `{party_id, member_key, host_key, expires_at (≈10 min)}` signed
+  with the service signing key.
+- The host's gate verifies the signature with the built-in service public key.
+  The gate never needs to contact the service to accept a player.
+- Kicked or banned members cannot get new passes. Hosts are also told live
+  over their own WebSocket, so they drop kicked players immediately.
+- Already-connected sessions keep working if the service is briefly unreachable.
+
+### 4.7 Live events
+
+The DO broadcasts to every connected member: member online/offline, someone
+started/stopped hosting (with game and player count), chat messages, joins,
+kicks, role changes, settings changes.
+
+### 4.8 Local cache on every device
+
+Each app keeps a copy of every party it is in (members, roles, hosts, recent
+chat) so it opens instantly and shows the last known state when offline. The
+service is always the source of truth.
+
+### 4.9 Deployment
+
+- Code in `service/`, configured with `wrangler.toml`.
+- GitHub Actions workflow using the official
+  [cloudflare/wrangler-action](https://github.com/cloudflare/wrangler-action),
+  triggered on pushes that change `service/`.
+- Needs two repository secrets, added once by the repo owner:
+  `CLOUDFLARE_API_TOKEN` (Workers edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
+- Ed25519 in Workers via the built-in Web Crypto API.
+
+---
+
+## 5. Hosting and playit.gg
+
+### 5.1 The playit agent
+
+- Only people who **host** need a playit.gg account. Joining never does.
+- The app runs the **official playit agent** as a background process; we do not
+  reimplement playit. The agent authenticates with a secret key.
+- Linking: the app starts the agent's claim flow, shows the claim code and an
+  "Open playit.gg" button, and stores the resulting secret in the app's data
+  folder. **(verify)** exact claim-flow commands/API from the
+  [playit-agent](https://github.com/playit-cloud/playit-agent) source.
+- Creating tunnels from the app (instead of the user doing it on the website)
+  uses the same API the agent uses. **(verify)** endpoints in the agent's
+  `api_client` crate.
+- Android: there is no official Android build of the agent. Plan: cross-compile
+  the agent (Rust) for `aarch64-linux-android` and ship it inside the APK as a
+  native library. **(verify)** it builds and runs.
+
+### 5.2 The gate
+
+Every host runs a **gate**: a small server inside PartyPort that the playit
+tunnel points at instead of at the game.
+
+- One **UDP tunnel** per host (works on the playit free tier).
+- **ENet** (built into LÖVE as `lua-enet`) runs over that tunnel, giving both
+  reliable and unreliable channels.
+- Handshake: joining app sends its pass and signs a random challenge from the
+  gate with its device key. Valid → the gate opens a session; invalid → dropped.
+- After the handshake, game traffic is forwarded:
+  - TCP games (Minecraft Java, Terraria…) → ENet reliable channel ↔ TCP socket to `127.0.0.1:<game port>`
+  - UDP games (Minecraft Bedrock, Palworld…) → ENet unreliable channel ↔ UDP socket to `127.0.0.1:<game port>`
+- Because the handshake names the game, **one tunnel serves every game** the host shares.
+- People without PartyPort can't speak the handshake, so they get nothing.
+
+### 5.3 "Allow joining without PartyPort"
+
+When ticked, the app also creates a **normal playit tunnel straight to the game
+port** (using playit's game presets where available) and shows/shares that
+address. Anyone with the address can join. Turning it off deletes that tunnel.
+
+### 5.4 Free vs Premium
+
+- Free tier: the gate's UDP tunnel and playit's game presets.
+- Premium: extra tunnel types (custom TCP etc.) and custom domains — PartyPort
+  shows these as available when the linked account has Premium.
+
+---
+
+## 6. Joining and the LAN bridge
+
+When a member clicks **Join**:
+
+1. App asks the party service for a pass for that host.
+2. App connects to the host's gate over ENet and completes the handshake.
+3. App opens a **local listener** on `127.0.0.1:<game port>` (or a free port if taken).
+4. App starts **LAN discovery** for that game so it appears in the game's LAN list.
+5. Status screen: tunnel reachable + ping, local address, "shown in LAN list".
+
+### 6.1 LAN discovery per game
+
+Game presets are data files (`app/presets/*.lua`) so new games can be added
+without code changes, including by the community.
+
+| Game | How it shows up |
+|---|---|
+| Minecraft Java | App multicasts `[MOTD]Jonas's server[/MOTD][AD]<local port>[/AD]` to `224.0.2.60:4445` every 1.5 s — the same packet Minecraft's own "Open to LAN" sends. |
+| Minecraft Bedrock | App answers RakNet "unconnected ping" broadcasts on UDP 19132 with an "unconnected pong" describing the server, so it appears under Friends → LAN Games. |
+| Terraria, Palworld and others without a LAN browser | No LAN list; the app shows "connect to 127.0.0.1:<port>" with a copy button. |
+| Custom TCP/UDP | Same as above; user enters the port. |
+
+---
+
+## 7. App structure (LÖVE)
+
+```
+app/
+  main.lua              entry point, layout switching, input
+  conf.lua
+  ui/                   widgets, screens, layouts (narrow / medium / wide)
+  themes/               partyport/, classic/, playit/  (data + optional draw hooks)
+  net/
+    service.lua         WebSocket client to the party service
+    gate.lua            host side (ENet server, forwarding)
+    bridge.lua          join side (ENet client, local listener, LAN discovery)
+    playit.lua          runs and talks to the playit agent
+  presets/              one file per game
+  crypto/               Monocypher via FFI
+  store/                local cache (JSON files in the save folder)
+  platform/             desktop vs Android specifics
+```
+
+- **Threads:** all networking runs in `love.thread` workers, never the main
+  loop, so it keeps running when the UI is paused (Android) or minimised.
+- **WebSocket client:** use an existing pure-Lua WebSocket client on top of
+  LuaSocket + TLS (**(verify)** which one supports TLS on all three platforms;
+  candidates are evaluated before writing our own).
+
+### 7.1 One UI, three layouts
+
+The layout depends on window width, not platform:
+
+| Width | Layout | Used for |
+|---|---|---|
+| narrow | portrait: parties list, bottom bar (Parties / Chat / Settings) | phones, default desktop window |
+| medium | two panes: parties + members │ chat with "is hosting" banner | wider desktop window, small tablets |
+| wide | three panes: rail │ parties │ chat │ host details | tablet landscape, maximised window |
+
+- **UI scale** setting (desktop default 90%, touch default 100%).
+- Desktop extras: hover states, right-click menus on members (Join, Message,
+  Copy address, Kick), keyboard shortcuts, close-to-tray.
+
+### 7.2 Themes
+
+- A theme is a folder with `theme.lua`: colours, fonts, corner radii, spacing,
+  icon set, and optional draw hooks for special looks (e.g. Classic's glossy bars).
+- Each theme lists which layouts it supports; unsupported layouts fall back to
+  narrow (Classic is narrow-only and stays centred when maximised).
+- Built-in: **PartyPort** (default), **Classic**, **Playit-style**. Users can
+  add themes in the app's themes folder.
+- Themes copy a *style*, never another company's logo or name.
+
+### 7.3 Desktop specifics
+
+- **Tray icon** with status, quick-join for hosted games, Open, Go offline,
+  Quit. LÖVE has no tray API, so this needs a small native helper or library.
+  **(verify)** pick a proven cross-platform tray library before building.
+- Desktop notifications for "X started hosting" with Join / Dismiss.
+
+### 7.4 Android specifics
+
+- Built with the official love-android project, plus:
+  - a **foreground service** with a persistent notification
+    ("Connected to Jonas's server" · Open chat · Disconnect), so networking
+    keeps running while the user is in the game;
+  - a **Wi-Fi multicast lock** while a LAN bridge is active (needed to receive
+    Bedrock's LAN broadcast);
+  - a one-time prompt to exclude PartyPort from **battery optimisation**;
+  - the playit agent binary for hosting (see 5.1).
+- Phones connect to others' gates by default and only run a gate while hosting.
+
+### 7.5 Browser preview
+
+- Built with love.js. Browsers can't open raw sockets, so the preview runs
+  against **demo data** (fake parties, members and chat) and cannot join real
+  games. Linked from the website as "Try in browser".
+
+---
+
+## 8. Chat
+
+- Party chat and direct messages between people who share a party.
+- Event messages with actions: "Jonas started hosting Minecraft Java [Join]",
+  "Emil joined Jonas's server".
+- Unread badges, per-party mute.
+- Kept on the service: last 500 messages per party. Kept locally: same.
+
+---
+
+## 9. Website
+
+- Static site in `website/` (plain HTML/CSS, no build step).
+- Sections: hero, how it works, features, supported games, downloads
+  (Windows, Linux, Android, browser preview), FAQ, footer.
+- Download buttons point to GitHub Releases.
+- Hosting: Cloudflare Pages, deployed by the same GitHub Actions setup
+  (or GitHub Pages — either works for a static site).
+- Later: `/join/<code>` route that opens the app with the invite, or tells the
+  visitor to install it first.
+
+---
+
+## 10. Repository layout
+
+```
+app/        LÖVE client
+service/    Cloudflare Worker + Durable Objects
+website/    download site
+docs/       this plan and other docs
+.github/    workflows (service deploy, website deploy, app builds)
+```
+
+---
+
+## 11. Build order (milestones)
+
+1. **Party service** — Worker + Durable Object: create party, invites, join,
+   members, roles, chat, live events, passes. Tested with a script client.
+2. **App skeleton** — LÖVE app, narrow layout, PartyPort theme, identity keys,
+   connect to service, parties list, chat.
+3. **Hosting** — playit agent integration, claim flow, gate, UDP tunnel.
+4. **Joining** — bridge, local listener, Minecraft Java LAN discovery.
+   First end-to-end test: two PCs, Minecraft Java, appears in LAN list.
+5. **More games** — Bedrock discovery, Terraria/Palworld/custom presets,
+   "Allow joining without PartyPort".
+6. **Layouts + themes** — medium and wide layouts, Classic and Playit-style
+   themes, UI scale, desktop tray and notifications.
+7. **Android** — love-android build, foreground service, multicast lock,
+   battery prompt, playit agent for Android, tablet layout.
+8. **Browser preview + website + releases** — love.js demo build, website live,
+   GitHub Releases with Windows, Linux and Android builds.
+
+Each milestone is tested end to end as a real user before it counts as done.
+
+---
+
+## 12. Open items to verify before building
+
+- playit agent: claim flow, tunnel create/delete API, Android build. (5.1)
+- Pure-Lua WebSocket + TLS client that works on Windows, Linux and Android. (7)
+- Cross-platform tray library for desktop. (7.3)
+- Bedrock RakNet pong fields for current Bedrock versions. (6.1)
