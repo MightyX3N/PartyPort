@@ -37,5 +37,10 @@ jobs:
           URL: ${{ steps.deploy.outputs.deployment-url }}
         run: |
           echo "Deployed to $URL"
+          # A new workers.dev address can take a little while to answer.
+          for i in $(seq 1 20); do
+            if curl -fsS "$URL/" | grep -q '"partyport"'; then break; fi
+            echo "not answering yet, retrying ($i)"; sleep 15
+          done
           curl -fsS "$URL/" | grep -q '"partyport"'
           curl -fsS "$URL/service-key" | grep -q '"Ed25519"'
