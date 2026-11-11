@@ -6,7 +6,9 @@ PartyPort is a Hamachi-style app built on [playit.gg](https://playit.gg).
 Join a party, and your friends' game servers show up in your game's LAN list
 as if everyone were on the same Wi-Fi. No port forwarding, no IP addresses to share.
 
-> Status: planning. Nothing to download yet.
+> Status: early development. Parties, invites and chat work; hosting and
+> joining games come next. Nothing to download yet — see
+> [app/README.md](app/README.md) to run it from source.
 
 ## How it will work
 
@@ -23,13 +25,15 @@ and themes including a classic Hamachi-style look.
 ## Docs
 
 - [Architecture plan](docs/ARCHITECTURE.md)
+- [App (UI)](app/README.md) · [Core](core/README.md) · [Party service](service/README.md)
 
-## Repository layout (planned)
+## Repository layout
 
 ```
-app/        LÖVE (Lua) client
+app/        UI (LÖVE / Lua)
+core/       background core (Go): networking, identity, later the gate and LAN bridge
 service/    Cloudflare Worker for parties, invites and chat
-website/    download site
+website/    download site (partyport.dovecross.site)
 docs/       design documents
 ```
 

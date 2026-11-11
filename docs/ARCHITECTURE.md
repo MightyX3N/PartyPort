@@ -33,20 +33,28 @@ peer-to-peer game traffic (playit.gg carries all game traffic).
 ## 2. The big picture
 
 ```
- ┌────────────────────────┐          WebSocket (TLS)         ┌──────────────────────────────┐
- │ PartyPort app (LÖVE)   │ ───────────────────────────────▶ │ Party service                │
- │  • UI + themes         │ ◀─────────────────────────────── │ Cloudflare Worker            │
- │  • local party cache   │   party events, chat, passes     │  + one Durable Object/party  │
- │  • LAN bridge          │                                  │  (SQLite storage)            │
- │  • gate (when hosting) │                                  └──────────────────────────────┘
- │  • playit agent (host) │
- └──────────┬─────────────┘
-            │ game traffic (ENet over one UDP tunnel)
-            ▼
- ┌────────────────────────┐        ┌───────────────────────────┐
- │ playit.gg network      │ ─────▶ │ Host's PartyPort gate      │ ─▶ game server on 127.0.0.1
- └────────────────────────┘        └───────────────────────────┘
+ PartyPort (one app, two programs)
+ ┌────────────────────────┐ local  ┌────────────────────────┐   WebSocket (TLS)   ┌──────────────────────────────┐
+ │ UI (LÖVE / Lua)        │ socket │ Core (Go)              │ ──────────────────▶ │ Party service                │
+ │  • screens + themes    │ ◀────▶ │  • device key          │ ◀────────────────── │ Cloudflare Worker            │
+ │  • layouts             │  JSON  │  • party connections   │  events, chat,      │  + one Durable Object/party  │
+ └────────────────────────┘ lines  │  • LAN bridge          │  passes             │  (SQLite storage)            │
+                                   │  • gate (when hosting) │                     └──────────────────────────────┘
+                                   │  • playit agent (host) │
+                                   └──────────┬─────────────┘
+                                              │ game traffic (QUIC over one UDP tunnel)
+                                              ▼
+                     ┌────────────────────────┐        ┌───────────────────────────┐
+                     │ playit.gg network      │ ─────▶ │ Host's PartyPort gate      │ ─▶ game server on 127.0.0.1
+                     └────────────────────────┘        └───────────────────────────┘
 ```
+
+**Why two programs:** LÖVE 11 has no TLS, so it can't make secure connections
+to the party service, and LÖVE 12 (which adds HTTPS but not WebSockets) is not
+released. The core is written in Go, which has TLS, WebSockets, Ed25519 and
+QUIC as proven libraries and cross-compiles to Windows, Linux and Android. The
+UI stays in LÖVE as planned. This also helps background running: the core keeps
+working while the UI is closed or paused (Android), and later hosts the tray icon.
 
 Three separate jobs:
 
@@ -54,24 +62,22 @@ Three separate jobs:
 |---|---|
 | Parties, members, invites, chat, "who is hosting" | **Party service** on Cloudflare |
 | Carrying game traffic over the internet | **playit.gg** tunnels |
-| Making the game think the server is on the LAN | **PartyPort app** (LAN bridge + gate) |
+| Making the game think the server is on the LAN | **PartyPort core** (LAN bridge + gate) |
+| Everything the user sees | **PartyPort UI** (LÖVE) |
 
 ---
 
 ## 3. Identity
 
-- On first run the app creates an **Ed25519 key pair** for the device. The
+- On first run the core creates an **Ed25519 key pair** for the device
+  (`identity.json` in the data folder). The
   public key is the member's identity; the private key never leaves the device.
 - The user picks a display name. Names are not unique; keys are.
 - Signing in on a second device: the old device shows a short link code, the new
   device enters it, and the old device signs a "this key is also me" statement
   that the party service stores. Lost device with no other device: rejoin parties
   via a new invite.
-- Crypto library: **Monocypher** (small single-file C library, easy to compile
-  for Windows, Linux and Android), called through LuaJIT's FFI or the existing
-  [luamonocypher](https://github.com/philanc/luamonocypher) binding. libsodium
-  ([luasodium](https://github.com/jprjr/luasodium)) is the fallback option.
-  We do not write our own crypto.
+- Crypto: Go's standard `crypto/ed25519`. We do not write our own crypto.
 
 ---
 
@@ -150,20 +156,27 @@ The DO broadcasts to every connected member: member online/offline, someone
 started/stopped hosting (with game and player count), chat messages, joins,
 kicks, role changes, settings changes.
 
-### 4.8 Local cache on every device
+### 4.8 Local cache and presence
 
-Each app keeps a copy of every party it is in (members, roles, hosts, recent
-chat) so it opens instantly and shows the last known state when offline. The
-service is always the source of truth.
+Each core keeps the list of parties it is in (`parties.json`) and their live
+state in memory, and reconnects on its own. The service is always the source
+of truth.
+
+Presence: the core sends `ping` every 25 s (Cloudflare answers `pong` without
+waking the party). Every 2 minutes the party closes connections that have been
+silent for 150 s, so a crashed app or lost network shows as offline. A core
+that quits or goes offline closes its connections properly, so others see it
+immediately.
 
 ### 4.9 Deployment
 
-- Code in `service/`, configured with `wrangler.toml`.
+- Code in `service/`, configured with `wrangler.jsonc`.
 - GitHub Actions workflow using the official
   [cloudflare/wrangler-action](https://github.com/cloudflare/wrangler-action),
   triggered on pushes that change `service/`.
-- Needs two repository secrets, added once by the repo owner:
-  `CLOUDFLARE_API_TOKEN` (Workers edit permission) and `CLOUDFLARE_ACCOUNT_ID`.
+- Needs two repository secrets: the API token (Workers edit permission; the
+  secret is named `CLOUDFLARE_API_TOKE` in this repo) and `CLOUDFLARE_ACCOUNT_ID`.
+- Live at `https://partyport-service.drgamingdk.workers.dev`.
 - Ed25519 in Workers via the built-in Web Crypto API.
 
 ---
@@ -173,7 +186,7 @@ service is always the source of truth.
 ### 5.1 The playit agent
 
 - Only people who **host** need a playit.gg account. Joining never does.
-- The app runs the **official playit agent** as a background process; we do not
+- The core runs the **official playit agent** as a background process; we do not
   reimplement playit. The agent authenticates with a secret key.
 - Linking: the app starts the agent's claim flow, shows the claim code and an
   "Open playit.gg" button, and stores the resulting secret in the app's data
@@ -192,13 +205,15 @@ Every host runs a **gate**: a small server inside PartyPort that the playit
 tunnel points at instead of at the game.
 
 - One **UDP tunnel** per host (works on the playit free tier).
-- **ENet** (built into LÖVE as `lua-enet`) runs over that tunnel, giving both
-  reliable and unreliable channels.
+- **QUIC** ([quic-go](https://github.com/quic-go/quic-go)) runs over that
+  tunnel, giving reliable streams (for TCP games) and datagrams (for UDP games).
+  (The first plan said ENet, which made sense when the networking lived in LÖVE;
+  with both ends in the Go core, QUIC is the better-proven choice.)
 - Handshake: joining app sends its pass and signs a random challenge from the
   gate with its device key. Valid → the gate opens a session; invalid → dropped.
 - After the handshake, game traffic is forwarded:
-  - TCP games (Minecraft Java, Terraria…) → ENet reliable channel ↔ TCP socket to `127.0.0.1:<game port>`
-  - UDP games (Minecraft Bedrock, Palworld…) → ENet unreliable channel ↔ UDP socket to `127.0.0.1:<game port>`
+  - TCP games (Minecraft Java, Terraria…) → one QUIC stream per connection ↔ TCP socket to `127.0.0.1:<game port>`
+  - UDP games (Minecraft Bedrock, Palworld…) → QUIC datagrams ↔ UDP socket to `127.0.0.1:<game port>`
 - Because the handshake names the game, **one tunnel serves every game** the host shares.
 - People without PartyPort can't speak the handshake, so they get nothing.
 
@@ -221,49 +236,54 @@ address. Anyone with the address can join. Turning it off deletes that tunnel.
 When a member clicks **Join**:
 
 1. App asks the party service for a pass for that host.
-2. App connects to the host's gate over ENet and completes the handshake.
+2. The core connects to the host's gate over QUIC and completes the handshake.
 3. App opens a **local listener** on `127.0.0.1:<game port>` (or a free port if taken).
 4. App starts **LAN discovery** for that game so it appears in the game's LAN list.
 5. Status screen: tunnel reachable + ping, local address, "shown in LAN list".
 
 ### 6.1 LAN discovery per game
 
-Game presets are data files (`app/presets/*.lua`) so new games can be added
+Game presets are data files (`core/presets/*.json`) so new games can be added
 without code changes, including by the community.
 
 | Game | How it shows up |
 |---|---|
-| Minecraft Java | App multicasts `[MOTD]Jonas's server[/MOTD][AD]<local port>[/AD]` to `224.0.2.60:4445` every 1.5 s — the same packet Minecraft's own "Open to LAN" sends. |
-| Minecraft Bedrock | App answers RakNet "unconnected ping" broadcasts on UDP 19132 with an "unconnected pong" describing the server, so it appears under Friends → LAN Games. |
+| Minecraft Java | The core multicasts `[MOTD]Jonas's server[/MOTD][AD]<local port>[/AD]` to `224.0.2.60:4445` every 1.5 s — the same packet Minecraft's own "Open to LAN" sends. |
+| Minecraft Bedrock | The core answers RakNet "unconnected ping" broadcasts on UDP 19132 with an "unconnected pong" describing the server, so it appears under Friends → LAN Games. |
 | Terraria, Palworld and others without a LAN browser | No LAN list; the app shows "connect to 127.0.0.1:<port>" with a copy button. |
 | Custom TCP/UDP | Same as above; user enters the port. |
 
 ---
 
-## 7. App structure (LÖVE)
+## 7. App structure: UI (LÖVE) + core (Go)
 
 ```
-app/
-  main.lua              entry point, layout switching, input
-  conf.lua
-  ui/                   widgets, screens, layouts (narrow / medium / wide)
-  themes/               partyport/, classic/, playit/  (data + optional draw hooks)
-  net/
-    service.lua         WebSocket client to the party service
-    gate.lua            host side (ENet server, forwarding)
-    bridge.lua          join side (ENet client, local listener, LAN discovery)
-    playit.lua          runs and talks to the playit agent
-  presets/              one file per game
-  crypto/               Monocypher via FFI
-  store/                local cache (JSON files in the save folder)
-  platform/             desktop vs Android specifics
+app/                    the UI (LÖVE 11.5)
+  main.lua              entry point, scaling, input, dialogs
+  core.lua              connection to the core (local socket, JSON lines);
+                        starts the core if it isn't running
+  app.lua               shared state and helpers
+  ui.lua                widgets: buttons, inputs, icons, scrolling, toasts
+  theme.lua             PartyPort theme (more themes later)
+  screens/              setup, parties, join, chat, settings
+  assets/fonts/         Inter + Space Grotesk (SIL Open Font License)
+  lib/json.lua          rxi/json.lua (MIT)
+core/                   the core (Go)
+  main.go               data folder, single instance, control.json
+  control.go            local control protocol for the UI
+  manager.go            parties list and state pushed to the UI
+  party.go              one live connection per party, reconnects
+  service.go            signed HTTPS calls to the party service
+  identity.go           device key
 ```
 
-- **Threads:** all networking runs in `love.thread` workers, never the main
-  loop, so it keeps running when the UI is paused (Android) or minimised.
-- **WebSocket client:** use an existing pure-Lua WebSocket client on top of
-  LuaSocket + TLS (**(verify)** which one supports TLS on all three platforms;
-  candidates are evaluated before writing our own).
+- The core picks a free port on `127.0.0.1` and writes it with a random token
+  to `control.json` in the data folder; the UI must present the token, so other
+  programs on the machine can't drive it.
+- Data folder: `%APPDATA%\PartyPort` (Windows), `~/.config/PartyPort` (Linux),
+  overridable with `PARTYPORT_DATA`.
+- Closing the UI stops the core for now; once the tray icon exists the core
+  keeps running in the background like Hamachi did.
 
 ### 7.1 One UI, three layouts
 
@@ -292,14 +312,15 @@ The layout depends on window width, not platform:
 ### 7.3 Desktop specifics
 
 - **Tray icon** with status, quick-join for hosted games, Open, Go offline,
-  Quit. LÖVE has no tray API, so this needs a small native helper or library.
-  **(verify)** pick a proven cross-platform tray library before building.
+  Quit, provided by the core using a proven Go tray library. **(verify)** which
+  one works best on Windows and Linux.
 - Desktop notifications for "X started hosting" with Join / Dismiss.
 
 ### 7.4 Android specifics
 
 - Built with the official love-android project, plus:
-  - a **foreground service** with a persistent notification
+  - the core built for Android (Go cross-compiles to `android/arm64`) and run
+    by a **foreground service** with a persistent notification
     ("Connected to Jonas's server" · Open chat · Disconnect), so networking
     keeps running while the user is in the game;
   - a **Wi-Fi multicast lock** while a LAN bridge is active (needed to receive
@@ -342,7 +363,8 @@ The layout depends on window width, not platform:
 ## 10. Repository layout
 
 ```
-app/        LÖVE client
+app/        UI (LÖVE)
+core/       core (Go): networking, identity, gate, LAN bridge
 service/    Cloudflare Worker + Durable Objects
 website/    download site
 docs/       this plan and other docs
@@ -353,10 +375,10 @@ docs/       this plan and other docs
 
 ## 11. Build order (milestones)
 
-1. **Party service** — Worker + Durable Object: create party, invites, join,
+1. **Party service** ✅ — Worker + Durable Object: create party, invites, join,
    members, roles, chat, live events, passes. Tested with a script client.
-2. **App skeleton** — LÖVE app, narrow layout, PartyPort theme, identity keys,
-   connect to service, parties list, chat.
+2. **App skeleton** ✅ — LÖVE UI + Go core, narrow layout, PartyPort theme,
+   identity keys, parties list, start/join, invites, chat, members and roles.
 3. **Hosting** — playit agent integration, claim flow, gate, UDP tunnel.
 4. **Joining** — bridge, local listener, Minecraft Java LAN discovery.
    First end-to-end test: two PCs, Minecraft Java, appears in LAN list.
@@ -376,6 +398,5 @@ Each milestone is tested end to end as a real user before it counts as done.
 ## 12. Open items to verify before building
 
 - playit agent: claim flow, tunnel create/delete API, Android build. (5.1)
-- Pure-Lua WebSocket + TLS client that works on Windows, Linux and Android. (7)
-- Cross-platform tray library for desktop. (7.3)
+- Cross-platform Go tray library for desktop. (7.3)
 - Bedrock RakNet pong fields for current Bedrock versions. (6.1)

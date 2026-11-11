@@ -1,3 +1,5 @@
 node_modules/
 .wrangler/
 .dev.vars
+core/partyport-core
+core/partyport-core.exe
