@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "partyport-service",
+  "main": "src/index.js",
+  "compatibility_date": "2025-10-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "PARTY", "class_name": "Party" },
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "KEYS", "class_name": "Keys" }
+    ]
+  },
+  // SQLite-backed Durable Objects are the kind available on the Workers Free plan.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Party", "Directory", "Keys"] }
+  ]
+}

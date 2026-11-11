@@ -1,0 +1,40 @@
+name: Deploy party service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "service/**"
+      - ".github/workflows/service.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: service-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: service
+          packageManager: npm
+      - name: Smoke test
+        env:
+          URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          echo "Deployed to $URL"
+          curl -fsS "$URL/" | grep -q '"partyport"'
+          curl -fsS "$URL/service-key" | grep -q '"Ed25519"'
