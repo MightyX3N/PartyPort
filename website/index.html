@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PartyPort – play LAN games with friends, from anywhere</title>
+  <meta name="description" content="PartyPort makes your friends' game servers show up in your LAN list. No port forwarding. Built on playit.gg. Windows, Linux and Android.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0B0E12">
+  <meta property="og:title" content="PartyPort">
+  <meta property="og:description" content="Play LAN games with friends, from anywhere. No port forwarding.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="#top" aria-label="PartyPort home">
+        <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 10.6 15.4 7.4M8.6 13.4l6.8 3.2"/></svg>
+        <span>PartyPort</span>
+      </a>
+      <nav class="site-nav" aria-label="Site">
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#faq">FAQ</a>
+        <a class="btn btn-primary btn-sm" href="#download">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero wrap">
+      <div class="hero-copy">
+        <p class="pill">No port forwarding · runs on playit.gg</p>
+        <h1>Play LAN games with friends, from anywhere.</h1>
+        <p class="lead">Join a party, and your friends' servers show up in your game's LAN list like they're in the same house. No port forwarding, no IP addresses to share.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" id="hero-download" href="#download">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            <span id="hero-download-label">Download</span>
+          </a>
+          <a class="btn btn-secondary btn-lg" href="#download">Other platforms</a>
+        </div>
+        <p class="meta" id="hero-meta">Free · Windows, Linux and Android</p>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="mock">
+          <div class="mock-me">
+            <span class="power"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/></svg></span>
+            <span class="mock-name"><strong>Mighty</strong><small>Online · 14 ms</small></span>
+          </div>
+          <div class="mock-party">
+            <p class="mock-party-name">Friday Gaming</p>
+            <div class="mock-row mock-row-host">
+              <span class="dot dot-on"></span>
+              <span class="mock-name"><strong>Jonas</strong><small>Hosting Minecraft Java</small></span>
+              <span class="mock-join">Join</span>
+            </div>
+            <div class="mock-row"><span class="dot dot-busy"></span><span>Emil · <small>in game</small></span></div>
+            <div class="mock-row muted"><span class="dot dot-off"></span><span>Sara</span></div>
+          </div>
+          <div class="mock-ready"><strong>Ready to play</strong> · listed under LAN worlds</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="band band-alt">
+      <div class="wrap stack">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li class="card">
+            <span class="step-num">1</span>
+            <h3>Join a party</h3>
+            <p>Start a party or paste an invite code from a friend. Everyone in the party can see who's online and what they're hosting.</p>
+          </li>
+          <li class="card">
+            <span class="step-num">2</span>
+            <h3>Someone hosts</h3>
+            <p>The host picks a game and PartyPort opens a playit.gg tunnel for it. Only the host needs a playit.gg account.</p>
+          </li>
+          <li class="card">
+            <span class="step-num">3</span>
+            <h3>It shows up in your game</h3>
+            <p>Click Join, open the game, and the server is listed under LAN, as if your friend were on your Wi-Fi.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="features" class="band">
+      <div class="wrap stack">
+        <h2>Everything a LAN party needs</h2>
+        <ul class="features">
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <div><h3>Party members only</h3><p>Servers only accept people in your party. Tick a box to let anyone with the address join too.</p></div>
+          </li>
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+            <div><h3>Party chat</h3><p>Talk to your party and get a ping with a Join button when someone starts a server.</p></div>
+          </li>
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+            <div><h3>Phone, tablet and PC</h3><p>The same app everywhere. Keeps running in the background while you play on your phone.</p></div>
+          </li>
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18M3 12h18"/></svg>
+            <div><h3>Works on playit.gg free</h3><p>Hosting works on a free playit.gg account. Premium unlocks extra tunnel types and custom domains.</p></div>
+          </li>
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 3-4 3h-2a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 22z"/></svg>
+            <div><h3>Themes</h3><p>Modern by default, plus a classic VPN-client look and a navy terminal look. Or make your own.</p></div>
+          </li>
+          <li class="feature">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6z"/></svg>
+            <div><h3>Your IP stays private</h3><p>Traffic goes through playit.gg's relays, so nobody in the party sees your home IP address.</p></div>
+          </li>
+        </ul>
+
+        <div class="games">
+          <span class="games-label">Ready-made setups for</span>
+          <span class="chip">Minecraft Java</span>
+          <span class="chip">Minecraft Bedrock</span>
+          <span class="chip">Terraria</span>
+          <span class="chip">Palworld</span>
+          <span class="chip chip-dashed">+ any TCP or UDP game</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="band band-alt">
+      <div class="wrap stack">
+        <div>
+          <h2>Download</h2>
+          <p class="sub" id="release-info">Checking for the latest release…</p>
+        </div>
+        <div class="downloads">
+          <div class="dl-card" data-platform="windows">
+            <div class="dl-head"><h3>Windows</h3><span class="badge" hidden>Detected</span></div>
+            <p>Windows 10 and 11</p>
+            <a class="btn btn-secondary dl-main" data-asset="exe" href="https://github.com/MightyX3N/PartyPort/releases">Download installer</a>
+            <a class="dl-alt" data-asset="winzip" href="https://github.com/MightyX3N/PartyPort/releases">Portable .zip</a>
+          </div>
+          <div class="dl-card" data-platform="linux">
+            <div class="dl-head"><h3>Linux</h3><span class="badge" hidden>Detected</span></div>
+            <p>x86_64 and ARM64</p>
+            <a class="btn btn-secondary dl-main" data-asset="appimage" href="https://github.com/MightyX3N/PartyPort/releases">Download AppImage</a>
+            <a class="dl-alt" data-asset="deb" href="https://github.com/MightyX3N/PartyPort/releases">.deb package</a>
+          </div>
+          <div class="dl-card" data-platform="android">
+            <div class="dl-head"><h3>Android</h3><span class="badge" hidden>Detected</span></div>
+            <p>Phones, tablets and Android TV boxes</p>
+            <a class="btn btn-secondary dl-main" data-asset="apk" href="https://github.com/MightyX3N/PartyPort/releases">Download APK</a>
+            <a class="dl-alt" data-needs-release href="#apk-help">How to install an APK</a>
+          </div>
+          <div class="dl-card dl-card-dashed">
+            <div class="dl-head"><h3>Try in browser</h3></div>
+            <p>Click around the app with demo parties. Can't connect to real games.</p>
+            <span class="btn btn-ghost dl-main" aria-disabled="true">Coming soon</span>
+            <span class="dl-alt dl-spacer" aria-hidden="true">&nbsp;</span>
+          </div>
+        </div>
+        <p class="sub" id="apk-help" data-needs-release>Installing the APK: open the downloaded file on your device and allow your browser to install apps when Android asks. You only need to do this once.</p>
+      </div>
+    </section>
+
+    <section id="faq" class="band">
+      <div class="wrap wrap-narrow stack">
+        <h2>Questions</h2>
+        <div class="faq">
+          <details open>
+            <summary>Do my friends need a playit.gg account?</summary>
+            <p>No. Only the person hosting a game links a playit.gg account. Everyone else just installs PartyPort.</p>
+          </details>
+          <details>
+            <summary>Can friends join without PartyPort?</summary>
+            <p>Yes, if the host ticks "Allow joining without PartyPort". They then get a normal address to paste into the game.</p>
+          </details>
+          <details>
+            <summary>What happens if the person who made the party is offline?</summary>
+            <p>Nothing changes. Parties don't live on anyone's PC, so members stay in the party and invites keep working while the creator is away.</p>
+          </details>
+          <details>
+            <summary>Does it work with Minecraft Bedrock on a phone?</summary>
+            <p>Yes. Install PartyPort on the phone, join the party, and the server appears under Friends → LAN Games.</p>
+          </details>
+          <details>
+            <summary>What about games without a LAN list?</summary>
+            <p>For games like Terraria or Palworld, PartyPort gives you a local address such as 127.0.0.1:7777 to connect to.</p>
+          </details>
+          <details>
+            <summary>Is this made by playit.gg?</summary>
+            <p>No. PartyPort is an independent app that uses playit.gg's tunnels for hosting.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-row">
+      <span>PartyPort · not affiliated with playit.gg</span>
+      <nav aria-label="Footer">
+        <a href="https://github.com/MightyX3N/PartyPort">Source on GitHub</a>
+        <a href="https://github.com/MightyX3N/PartyPort/releases">Releases</a>
+        <a href="https://github.com/MightyX3N/PartyPort/blob/main/docs/ARCHITECTURE.md">How it's built</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
